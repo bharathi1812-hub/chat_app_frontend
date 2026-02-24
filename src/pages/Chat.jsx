@@ -6,7 +6,10 @@ import { useNavigate } from "react-router-dom";
 function Chat() {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
-  const [stompClient, setStompClient] = useState(null);
+  const [connected, setConnected] = useState(false);
+  const [dark, setDark] = useState(true);
+
+  const stompRef = useRef(null);
   const chatEndRef = useRef(null);
   const navigate = useNavigate();
 
@@ -15,18 +18,19 @@ function Chat() {
   useEffect(() => {
     const client = new Client({
       webSocketFactory: () => new SockJS("http://localhost:8081/ws"),
-      connectHeaders: {
-        Authorization: "Bearer " + localStorage.getItem("token"),
-      },
+      reconnectDelay: 5000,
       onConnect: () => {
-        client.subscribe("/topic/messages", (msg) => {
-          setMessages((prev) => [...prev, JSON.parse(msg.body)]);
+        setConnected(true);
+
+        client.subscribe("/topic/messages", msg => {
+          setMessages(prev => [...prev, JSON.parse(msg.body)]);
         });
       },
+      onDisconnect: () => setConnected(false)
     });
 
     client.activate();
-    setStompClient(client);
+    stompRef.current = client;
 
     return () => client.deactivate();
   }, []);
@@ -36,20 +40,20 @@ function Chat() {
   }, [messages]);
 
   const sendMessage = () => {
-    if (!stompClient || !text.trim()) return;
+    if (!connected || !text.trim()) return;
 
-    stompClient.publish({
+    stompRef.current.publish({
       destination: "/app/chat",
       body: JSON.stringify({
         sender: username,
-        content: text,
-      }),
+        content: text
+      })
     });
 
     setText("");
   };
 
-  const handleKey = (e) => {
+  const handleKey = e => {
     if (e.key === "Enter") sendMessage();
   };
 
@@ -59,32 +63,33 @@ function Chat() {
   };
 
   return (
-    <div style={styles.page}>
+    <div style={{
+      ...styles.page,
+      background: dark ? "#0f172a" : "#f8fafc",
+      color: dark ? "white" : "black"
+    }}>
       <div style={styles.header}>
         💬 Live Chat
-        <button onClick={logout} style={styles.logout}>
-          Logout
-        </button>
+        <div>
+          <button onClick={() => setDark(!dark)} style={styles.toggle}>
+            {dark ? "☀️" : "🌙"}
+          </button>
+          <button onClick={logout} style={styles.logout}>Logout</button>
+        </div>
       </div>
 
       <div style={styles.chatBox}>
         {messages.map((m, i) => (
-          <div
-            key={i}
-            style={{
-              display: "flex",
-              justifyContent:
-                m.sender === username ? "flex-end" : "flex-start",
-              marginBottom: "8px",
-            }}
-          >
-            <div
-              style={{
-                ...styles.bubble,
-                background:
-                  m.sender === username ? "#38bdf8" : "#22c55e",
-              }}
-            >
+          <div key={i} style={{
+            display: "flex",
+            justifyContent: m.sender === username ? "flex-end" : "flex-start",
+            marginBottom: "10px"
+          }}>
+            <div style={{
+              ...styles.bubble,
+              background: m.sender === username ? "#38bdf8" : "#22c55e",
+              color: "black"
+            }}>
               <small>{m.sender}</small>
               <div>{m.content}</div>
             </div>
@@ -97,11 +102,19 @@ function Chat() {
         <input
           style={styles.input}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={e => setText(e.target.value)}
           onKeyDown={handleKey}
-          placeholder="Type message..."
+          placeholder={connected ? "Type message..." : "Connecting..."}
+          disabled={!connected}
         />
-        <button style={styles.sendBtn} onClick={sendMessage}>
+        <button
+          style={{
+            ...styles.sendBtn,
+            opacity: connected ? 1 : 0.5
+          }}
+          onClick={sendMessage}
+          disabled={!connected}
+        >
           Send
         </button>
       </div>
@@ -111,11 +124,9 @@ function Chat() {
 
 const styles = {
   page: {
-    background: "#0f172a",
-    color: "white",
     height: "100vh",
     display: "flex",
-    flexDirection: "column",
+    flexDirection: "column"
   },
   header: {
     padding: "15px",
@@ -123,6 +134,14 @@ const styles = {
     background: "#020617",
     display: "flex",
     justifyContent: "space-between",
+    alignItems: "center"
+  },
+  toggle: {
+    marginRight: "10px",
+    background: "transparent",
+    border: "none",
+    fontSize: "18px",
+    cursor: "pointer"
   },
   logout: {
     background: "#ef4444",
@@ -130,39 +149,39 @@ const styles = {
     color: "white",
     padding: "6px 12px",
     borderRadius: "6px",
-    cursor: "pointer",
+    cursor: "pointer"
   },
   chatBox: {
     flex: 1,
-    padding: "15px",
-    overflowY: "auto",
+    padding: "20px",
+    overflowY: "auto"
   },
   bubble: {
-    padding: "10px 14px",
+    padding: "10px 15px",
     borderRadius: "12px",
-    maxWidth: "60%",
+    maxWidth: "60%"
   },
   inputBar: {
     display: "flex",
-    padding: "10px",
-    background: "#020617",
+    padding: "15px",
+    background: "#020617"
   },
   input: {
     flex: 1,
-    padding: "10px",
+    padding: "12px",
     borderRadius: "8px",
     border: "none",
-    outline: "none",
+    outline: "none"
   },
   sendBtn: {
     marginLeft: "10px",
     background: "#38bdf8",
     border: "none",
-    padding: "10px 16px",
+    padding: "12px 18px",
     borderRadius: "8px",
     fontWeight: "bold",
-    cursor: "pointer",
-  },
+    cursor: "pointer"
+  }
 };
 
 export default Chat;
